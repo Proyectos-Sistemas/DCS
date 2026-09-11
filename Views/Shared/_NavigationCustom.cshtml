@@ -1,0 +1,25 @@
+﻿<div id="navigation">
+    <div class="profile-picture" >
+
+  
+        <!--<a href="@Url.Action("Index", "Dashboard")">-->
+        <img src="~/Images/unis.png" style="border-top: 10px; width: 120px; height:80px;" class="img-rounded" alt="logo">
+        
+
+        <div class="stats-label text-color">
+            <span class="font-extra-bold font-uppercase"></span>
+
+            @*<div class="dropdown">
+                <a class="dropdown-toggle" href="#" data-toggle="dropdown">
+                    <small class="text-muted">UNIS<b class="caret"></b></small>
+                </a>
+            </div>*@
+        </div>
+    </div>
+
+    <ul class="nav metismenu" id="side-menu">
+        <li class="@Html.IsSelected(controller: "ServiceRequest")">
+            <a href="@Url.Action("ServiceRequest", "Service")"> <span class="nav-label">Servicio</span></a>
+        </li>
+    </ul>
+</div>

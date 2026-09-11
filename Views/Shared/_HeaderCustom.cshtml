@@ -1,0 +1,60 @@
+﻿<div class="color-line">
+</div>
+<div id="logo" class="light-version">
+    <span>
+        Universidad Del Istmo
+    </span>
+</div>
+<nav role="navigation">
+    <div class="header-link hide-menu"><i class="fa fa-bars"></i></div>
+    <div class="small-logo">
+        <span class="text-primary">Universidad Del Istmo</span>
+    </div>
+
+    <div class="mobile-menu">
+        <button type="button" class="navbar-toggle mobile-menu-toggle" data-toggle="collapse" data-target="#mobile-collapse">
+            <i class="fa fa-chevron-down"></i>
+        </button>
+        <div class="collapse mobile-navbar" id="mobile-collapse">
+            <ul class="nav navbar-nav nav-justified">
+                <li class="ql-align-center">
+
+                    @if (Request.IsAuthenticated)
+                    {
+                        using (Html.BeginForm("SignOut", "Account", FormMethod.Post, new { id = "logoutForm" }))
+                        {
+                            @Html.AntiForgeryToken()
+                            <p>Bienvenido <strong>@User.Identity.Name</strong></p>
+                            <a href="javascript:document.getElementById('logoutForm').submit()"><i class="fa fa-sign-out"></i> Cerrar Sesión</a>
+                        }
+                    }
+                </li>
+
+            </ul>
+        </div>
+    </div>
+    <div class="navbar-right ">
+
+        @if (Request.IsAuthenticated)
+        {
+            using (Html.BeginForm("SignOut", "Account", FormMethod.Post, new { id = "logoutForm" }))
+            {
+                @Html.AntiForgeryToken()
+
+                <div class="row">
+                    <div class="col-sm-6 col-md-6 col-lg-6">
+                        <span class="nav-link">Bienvenido <strong>@User.Identity.Name</strong></span>
+                    </div>
+                    <div class="col-sm-6 col-md-6 col-lg-6">
+                        <a href="javascript:document.getElementById('logoutForm').submit()" class="btn btn-navbar"><i class="fa fa-sign-out"></i> Cerrar Sesión</a>
+                    </div>
+                </div>
+
+
+            }
+        }
+
+    </div>
+
+
+</nav>

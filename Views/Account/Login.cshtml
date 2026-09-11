@@ -1,0 +1,128 @@
+﻿@model Homer_MVC.Models.LoginViewModel
+@{
+    Layout = null;              // mantenemos la vista “limpia” sin los menús laterales
+    ViewBag.Title = "Login";
+}
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>UNIS | Inicio de sesión</title>
+
+    <!-- =======  MISMAS HOJAS DE ESTILO QUE EN _Layout ======= -->
+    @Styles.Render("~/bundles/font-awesome/css")
+    @Styles.Render("~/bundles/animate/css")
+    @Styles.Render("~/bundles/bootstrap/css")
+    @Styles.Render("~/bundles/peicon7stroke/css")
+    @Styles.Render("~/bundles/sweetAlert/css")
+    @Styles.Render("~/bundles/homer/css")
+
+    <!-- Hoja de estilo propia para los colores UNIS -->
+    <style>
+        :root{
+            --unis-primary:#9c1837;   /* granate corporativo */
+            --unis-gold:#947310;      /* dorado-oliva botón  */
+            --unis-light:#edf5ff;     /* campos de texto     */
+        }
+        body{
+            min-height:100vh;
+            background:var(--unis-primary);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-family:'Open Sans','Helvetica Neue',Helvetica,Arial,sans-serif;
+        }
+        .login-card{
+            background:var(--unis-primary);
+            color:#fff;
+            border:0;
+            padding:40px 30px;
+            max-width:850px;
+            width:100%;
+        }
+        .login-card .form-control{
+            background:var(--unis-light);
+            border:0;
+            font-size:14px;
+        }
+        .btn-unis{
+            background:var(--unis-gold);
+            border:0;
+        }
+        .btn-unis:hover{
+            background:#7c6010;
+        }
+
+        /* Logo */
+        .unis-logo{
+            max-height:80px;
+        }
+        media (max-width:767px){
+            .login-left{margin-bottom:25px;text-align:center}
+            .unis-logo{max-height:60px}
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card login-card">
+
+        <div class="row">
+            <!-- Columna izquierda: logo + texto de bienvenida -->
+            <div class="col-md-6 login-left">
+                <div class="text-center text-md-start mb-4">
+                    <img src="https://unis.edu.gt/wp-content/uploads/2021/08/logo.svg"
+                         alt="Universidad del Istmo" class="unis-logo" />
+                </div>
+
+                <h2 class="fw-bold">Bienvenido a UNIS</h2>
+                <p>
+                    Por favor ingrese sus credenciales de acceso.<br>
+                    Si no cuenta con un usuario de red inalámbrica, comuníquese al <strong>6665-3500</strong> o escriba a <strong>soporte@unis.edu.gt</strong>.
+                </p>
+            </div>
+
+            <!-- Columna derecha: formulario -->
+            <div class="col-md-6">
+                @using (Html.BeginForm("Login", "Account", FormMethod.Post))
+                {
+                    @Html.AntiForgeryToken()
+
+                    <div class="form-group mb-3">
+                        <label class="text-uppercase small fw-bold">Número de DPI</label>
+                        @Html.TextBoxFor(m => m.Usuario, new { @class = "form-control", placeholder = "3001913750101", required = "required" })
+                        @Html.ValidationMessageFor(m => m.Usuario, null, new { @class = "text-warning small" })
+                    </div>
+
+                    <div class="form-group mb-4">
+                        <label class="text-uppercase small fw-bold">Contraseña</label>
+                        @Html.PasswordFor(m => m.Contrasena, new { @class = "form-control", placeholder = "••••••", required = "required", autocomplete = "off" })
+                        @Html.ValidationMessageFor(m => m.Contrasena, null, new { @class = "text-warning small" })
+                    </div>
+
+                    <button type="submit" class="btn btn-unis btn-block fw-bold mb-2">
+                        Iniciar sesión
+                    </button>
+
+                    @*<div class="text-center">
+                        <a href="#" class="text-white small">Olvidé mi contraseña</a>
+                    </div>*@
+
+                    //mensaje de error enviado desde el controlador
+                    if (!string.IsNullOrEmpty(ViewBag.Error as string))
+                    {
+                        <p class="text-warning mt-3">@ViewBag.Error</p>
+                    }
+                }
+            </div>
+        </div><!-- /row -->
+    </div><!-- /card -->
+    <!-- =======  MISMOS SCRIPTS QUE EN _Layout ======= -->
+    @Scripts.Render("~/bundles/jquery/js")
+    @Scripts.Render("~/bundles/bootstrap/js")
+    @Scripts.Render("~/bundles/homer/js")
+    @Scripts.Render("~/bundles/sweetAlert/js")
+</body>
+</html>

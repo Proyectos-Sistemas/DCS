@@ -1,0 +1,333 @@
+﻿@model  Homer_MVC.Models.MailEAModel
+
+@{
+    ViewBag.Title = "Solicitud de Servicio";
+}
+
+@using Recaptcha.Web.Mvc;
+
+@using (Html.BeginForm("ServiceRequest", "Service", FormMethod.Post, new { enctype = "multipart/form-data", id = "simpleForm" }))
+{
+    @Html.AntiForgeryToken()
+
+    <div class="small-header">
+        <div class="hpanel">
+            <div class="panel-body">
+                <div id="hbreadcrumb" class="pull-right">
+                    <ol class="hbreadcrumb breadcrumb">
+                        <li>Home</li>
+                        <li class="active">
+                            <span>Solicitud de Servicio</span>
+                        </li>
+                    </ol>
+                </div>
+                <h2 class="font-light m-b-xs">
+                    Solicitud De Servicio
+                </h2>
+                <small>Sigue los pasos para ingresar tu solicitud.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="content">
+
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="hpanel hred">
+                    <div class="panel-heading">
+                        <div class="panel-tools">
+
+                        </div>
+
+                    </div>
+                    <div class="panel-body">
+                        @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+
+                        <div class="row">
+                            <div class="col-lg-3 text-center">
+                                <i class="pe-7s-user fa-5x text-muted"></i>
+                                <p class="small m-t-md">
+                                    <strong>Datos Personales</strong>
+                                    <br /><br />Verifica tus datos.
+                                </p>
+                            </div>
+                            <div class="col-lg-9">
+                                <div class="row">
+                                    <div class="form-group col-lg-4">
+                                        <label>Correo electrónico (unis.edu.gt)</label>
+                                        @Html.EditorFor(model => model.correo, new { htmlAttributes = new { @class = "form-control", @readonly = "readonly" } })
+                                        @Html.ValidationMessageFor(model => model.correo, "", new { @class = "text-danger" })
+                                    </div>
+                                    <div class="form-group col-lg-4">
+                                        <label>CUI</label>
+                                        @Html.EditorFor(model => model.CUI, new { htmlAttributes = new { @class = "form-control", @readonly = "readonly" } })
+                                        @Html.ValidationMessageFor(model => model.CUI, "", new { @class = "text-danger" })
+                                    </div>
+                                    <div class="form-group col-lg-4">
+                                        <label>Codigo Campus</label>
+                                        @Html.EditorFor(model => model.IdCampus, new { htmlAttributes = new { @class = "form-control", @readonly = "readonly" } })
+                                        @Html.ValidationMessageFor(model => model.IdCampus, "", new { @class = "text-danger" })
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="form-group col-lg-6">
+                                        <label>Nombres</label>
+                                        @Html.EditorFor(model => model.Nombres, new { htmlAttributes = new { @class = "form-control", @readonly = "readonly" } })
+                                        @Html.ValidationMessageFor(model => model.Nombres, "", new { @class = "text-danger" })
+                                    </div>
+                                    <div class="form-group col-lg-6">
+                                        <label>Apellidos</label>
+                                        @Html.EditorFor(model => model.Apellidos, new { htmlAttributes = new { @class = "form-control", @readonly = "readonly" } })
+                                        @Html.ValidationMessageFor(model => model.Apellidos, "", new { @class = "text-danger" })
+                                    </div>
+
+                                </div>
+                                @if (ViewData["EstadoCivil"] != null)
+
+                                {
+                                    <div class="row">
+                                        <div class="form-group col-lg-6">
+                                            <label>Apellido de Casada</label>
+                                            @Html.EditorFor(model => model.ApellidoCasada, new { htmlAttributes = new { @class = "form-control", @readonly = "readonly" } })
+                                            @*@Html.ValidationMessageFor(model => model.ApellidoCasada, "", new { @class = "text-danger" })*@
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-lg-3 text-center">
+                                <i class="pe-7s-help1 fa-5x text-muted"></i>
+                                <p class="small m-t-md">
+                                    <strong>¿Es correcta tu solicitud?</strong>
+                                    @*<br /><br />Selecciona una opción.*@
+                                </p>
+                            </div>
+
+                            <div class="col-lg-9">
+                                <div class="row">
+                                    <div class="col-lg-3">
+                                        <label>Departamento o Facultad </label>
+                                    </div>
+                                    <div class="form-group col-lg-9">
+                                        @Html.DropDownListFor(model => model.Nombre_Departamento, Model.Departamentos, "Selecciona", new { @class = "form-control" })
+                                        @Html.ValidationMessageFor(model => model.Nombre_Departamento, "", new { @class = "text-danger" })
+
+                                    </div>
+
+                                </div>
+                                <div class="row">
+                                    <div class="col-lg-3">
+                                        <label>*Solicitud  </label>
+                                    </div>
+                                    <div class="form-group col-lg-9">
+
+                                        @Html.DropDownListFor(model => model.Nombre_Producto, Model.Productos, "Selecciona", new { @class = "form-control" })
+                                        @Html.ValidationMessageFor(model => model.Nombre_Producto, "", new { @class = "text-danger" })
+
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-lg-3">
+                                        <label>Describe tu solicitud</label>
+                                    </div>
+                                    <div class="form-group col-lg-9">
+                                        @Html.EditorFor(model => model.problema, new { htmlAttributes = new { @class = "form-control" } })
+                                        @Html.ValidationMessageFor(model => model.problema, "", new { @class = "text-danger" })
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row  m-t-lg m-b-lg">
+                            <div class="text-center col-lg-3"></div>
+                            <div class="col-lg-9">
+                                <div class="row">
+                                    <div class="col-lg-3">
+                                        <label>Adjuntar Archivo (opcional)</label>
+                                    </div>
+                                    <div class="form-group col-lg-9">
+                                        <span>Archivos Aceptados ".pdf",".png",".jpg",".jpeg",".docx"</span>
+                                        @Html.TextBoxFor(model => model.ArchivoAdjunto, new { type = "file", @class = "form-control", accept = ".pdf,.png,.jpg,.jpeg,.docx" })
+                                        @Html.ValidationMessageFor(model => model.ArchivoAdjunto, "", new { @class = "text-danger" })
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                        <div class="row  m-t-lg m-b-lg">
+                            <div class="text-center col-lg-3">
+                                <i class="pe-7s-check fa-5x text-muted"></i>
+                                <p class="small m-t-md">
+                                    Completa el <strong>Captcha</strong> para enviar la solicitud
+                                </p>
+                            </div>
+                            <div class="col-lg-3">
+                            </div>
+                            <div class="col-lg-3 text-center">
+                                <br />
+                                @Html.RecaptchaApiScript()
+                                <!-- Render recaptcha widget with default properties. -->
+                                @Html.RecaptchaWidget(renderApiScript: false)
+                                @Html.ValidationMessage("captcha", new { @class = "text-danger" })
+
+                            </div>
+                            <div class="col-lg-3">
+                            </div>
+                        </div>
+                        <div class="row text-center m-t-lg m-b-lg">
+                            <div class="col-lg-4">
+                            </div>
+
+                        </div>
+                        <div class="row text-center m-t-lg m-b-lg">
+                            <div class="col-lg-12">
+
+                            </div>
+                        </div>
+                        <div class="text-right m-t-xs">
+                            <input type="submit" value="Enviar" class="btn btn-success submitWizard" />
+                        </div>
+
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+}
+
+@section Scripts {
+
+
+    <script type="text/javascript">
+
+
+        $(function () {
+
+
+            $('#Nombre_Departamento').chosen();
+            $('#Nombre_Producto').chosen();
+
+
+
+            $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+                $('a[data-toggle="tab"]').removeClass('btn-primary');
+                $('a[data-toggle="tab"]').addClass('btn-default');
+                $(this).removeClass('btn-default');
+                $(this).addClass('btn-primary');
+            })
+
+            $('.next').click(function () {
+                var nextId = $(this).parents('.tab-pane').next().attr("id");
+                $('[href=#' + nextId + ']').tab('show');
+            })
+
+            $('.prev').click(function () {
+                var prevId = $(this).parents('.tab-pane').prev().attr("id");
+                $('[href=#' + prevId + ']').tab('show');
+            })
+
+
+            //document.getElementById("Nombre_Categoria_chosen").style.width = "300px";
+            //document.getElementById("Nombre_Producto_chosen").style.width = "300px";
+
+            $("#Nombre_Departamento").change(function () {
+                $.get("/Service/GetProductosList",
+                    { departamentoId: $("#Nombre_Departamento").val() },
+                    function (data) {
+                        $("#Nombre_Producto").empty();
+                        $("#Nombre_Producto").append("<option value>     </option>");
+                        $.each(data, function (index, row) {
+                            $("#Nombre_Producto").append("<option value='" + row.ID_PRODUCTO + "'>" + row.NOMBRE_PRODUCTO + "</option>");
+                        });
+                        $('#Nombre_Producto').trigger("chosen:updated");
+                    });
+            });
+
+            @*var isSuccess = "@ViewBag.success"
+            switch (isSuccess) {
+                case "initialize":
+                    // code block
+                    break;
+                case "success":
+                    swal({
+                        title: "Gracias!",
+                        text: "Tu solicitud fue enviada correctamente!",
+                        type: "success"
+                    });
+                    break;
+                case "error":
+                    swal({
+                        title: "Uy!",
+                        text: "Falta algún dato en tu solicitud!",
+                        type: "error"
+                    });
+                    break;
+                default:
+                    // code block
+            }*@
+
+            //$('.submitWizard').click(function () {
+
+            //    var approve = $(".approveCheck").is(':checked');
+            //    if (approve) {
+            //        // Got to step 1
+            //        $('[href=#step1]').tab('show');
+
+            //        // Serialize data to post method
+            //        var datastring = $("#simpleForm").serialize();
+
+            //        // Show notification
+            //        swal({
+            //            title: "Thank you!",
+            //            text: "You approved our example form!",
+            //            type: "success"
+            //        });
+            //        //            Example code for post form
+            //        //            $.ajax({
+            //        //                type: "POST",
+            //        //                url: "your_link.php",
+            //        //                data: datastring,
+            //        //                success: function(data) {
+            //        //                    // Notification
+            //        //                }
+            //        //            });
+            //    } else {
+            //        // Show notification
+            //        swal({
+            //            title: "Error!",
+            //            text: "You have to approve form checkbox.",
+            //            type: "error"
+            //        });
+            //    }
+            //})
+        })
+
+        window.addEventListener("load", function (event) {
+               var isSuccess = "@ViewBag.success"
+            switch (isSuccess) {
+                case "initialize":
+                    // code block
+                    break;
+                case "success":
+                    swal({
+                        title: "¡Gracias!",
+                        text: "La solicitud fue enviada correctamente. Nuestro personal le estará contactando",
+                        type: "success"
+                    });
+                    break;
+                case "error":
+                    swal({
+                        title: "Error",
+                        text: "Completar todos los campos obligatorios",
+                        type: "error"
+                    });
+                    break;
+                default:
+                    // code block
+            }
+        });
+    </script>
+
+}
