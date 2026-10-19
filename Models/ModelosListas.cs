@@ -13,23 +13,24 @@ namespace Homer_MVC
     {
 
     }
-    [Table("TBL_PRODUCTO_DCS", Schema = "UNIS_INTERFACES")]
-    public class ProductoModel
+    [Table("TBL_DCS_TIPO_SOLICITUD", Schema = "UNIS_INTERFACES")]
+    public class TipoSolicitudModel
     {
         [Key]
-        public int ID_PRODUCTO { get; set; }
-        public string NOMBRE_PRODUCTO { get; set; }
-        public string COLA { get; set; }
-        public Nullable<int> ID_CATEGORIA { get; set; }
+        public int ID_TIPO_SOLICITUD { get; set; }
+        public string NOMBRE_TIPO_SOLICITUD { get; set; }
+        public int ID_CATEGORIA { get; set; }
+        public int? ID_DEPARTAMENTO { get; set; }   // cola de Fusion (101..108) a la que va el tipo
     }
-    [Table("TBL_CATEGORIA_DCS", Schema = "UNIS_INTERFACES")]
+    [Table("TBL_DCS_CATEGORIA", Schema = "UNIS_INTERFACES")]
     public class CategoriaModel
     {
         [Key]
         public int ID_CATEGORIA { get; set; }
         public string NOMBRE_CATEGORIA { get; set; }
+        public int? ID_DEPARTAMENTO { get; set; }   // departamento del form (1..n); el ruteo a Fusion es por tipo
     }
-    [Table("TBL_DEPARTAMENTO_DCS", Schema = "UNIS_INTERFACES")]
+    [Table("TBL_DCS_DEPARTAMENTO", Schema = "UNIS_INTERFACES")]
     public class DepartamentoModel
     {
         [Key]
@@ -40,32 +41,30 @@ namespace Homer_MVC
         public string CORREO_EXTERNO { get; set; }
     }
 
-    [Table("TBL_SOLICITUD_DCS", Schema = "UNIS_INTERFACES")]
+    [Table("TBL_DCS_SOLICITUD", Schema = "UNIS_INTERFACES")]
     public class SolicitudModel
     {
         [Key]
-        public int? ID_SOLICITUD { get; set; }   // lo devuelve la inserción
-        public string EMAIL { get; set; }
-        public string CUI { get; set; }
-        public string CODIGO_CAMPUS { get; set; }
-        public string NOMBRES { get; set; }
-        public string APELLIDOS { get; set; }
-        public string APELLIDO_CASADA { get; set; }
-        public string DEPARTAMENTO { get; set; }
-        public string SOLICITUD { get; set; } // “Solicitud” del formulario
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int? ID_SOLICITUD { get; set; }   // lo devuelve la inserciï¿½n
+        public int? ID_TIPO_SOLICITUD { get; set; }   // null = enviada solo con departamento
+        public int? ID_DEPARTAMENTO { get; set; }     // departamento elegido en el form (1..n)
+        public string EMAIL_SOLICITANTE { get; set; }
         public string DESCRIPCION { get; set; }
-        public string ARCHIVO_NOMBRE { get; set; }
-        public string ARCHIVO_RUTA { get; set; }
-        public DateTime? CREATED_AT { get; set; }
-        public string CREATED_IP { get; set; }
+        public DateTime? FECHA_CREACION { get; set; }
+        public string ESTADO { get; set; }
+        public string ORIGEN { get; set; }   // ej. "SCALA" cuando la solicitud viene de ese sistema; null/vacio en el flujo normal
+        public string NUMERO_SR { get; set; }   // SR de Fusion vinculado; null mientras no se encuentra
     }
 
-    [Table("TBL_PARAMETRO_DCS", Schema = "UNIS_INTERFACES")]
+    [Table("TBL_DCS_PARAMETRO", Schema = "UNIS_INTERFACES")]
     public class ParametroModel
     {
         [Key]
-        public string PARAMETRO { get; set; }
+        public int ID_PARAMETRO { get; set; }
+        public string NOMBRE_PARAMETRO { get; set; }
         public string VALOR { get; set; }
+        public DateTime? FECHA_ACTUALIZACION { get; set; }
     }
 
 

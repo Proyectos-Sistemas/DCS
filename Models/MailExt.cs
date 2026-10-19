@@ -13,7 +13,9 @@ namespace Homer_MVC.Models
         [Required(ErrorMessage = "Campo obligatorio")]
         public string Nombre_Departamento { get; set; }
         public List<SelectListItem> Productos { get; set; }
-        [Required(ErrorMessage = "Campo obligatorio")]
+        // Categoria y Solicitud son opcionales: se puede enviar solo con departamento
+        public string Nombre_Categoria { get; set; }
+        public List<SelectListItem> Categorias { get; set; }
         public string Nombre_Producto { get; set; }
         public List<SelectListItem> Departamentos { get; set; }
         [Required(ErrorMessage = "Campo obligatorio")]

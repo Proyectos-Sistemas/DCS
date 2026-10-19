@@ -16,6 +16,7 @@ namespace Homer_MVC.Controllers
     public class AccountController : Controller
 
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(AccountController));
         private string _strDirectorio = "LDAP://unis.local/dc=unis,dc=local";
 
         private string _strFiltro;
@@ -26,10 +27,10 @@ namespace Homer_MVC.Controllers
 
         public void Login()
         {
-            var _d = Session["department"];
-            var _q = Session["query"];
-
-
+            var sessionDepartment = Session["department"];
+            var sessionDescription = Session["query"];
+            var sessionTipoSolicitud = Session["tipoSolicitud"];
+            var sessionOrigen = Session["origen"];
 
             //return View();
             if (!Request.IsAuthenticated)
@@ -40,9 +41,9 @@ namespace Homer_MVC.Controllers
             }
             else
             {
-                if (_d != null && _q != null)
+                if (sessionDepartment != null && sessionDescription != null)
                 {
-                    RedirectToAction("ServiceRequest", "Service", new { IsSuccess = 0, d = _d, q = _q});
+                    RedirectToAction("ServiceRequest", "Service", new { IsSuccess = 0, department = sessionDepartment, description = sessionDescription, tipoSolicitud = sessionTipoSolicitud, origen = sessionOrigen});
 
                 }
                 else
@@ -69,6 +70,7 @@ namespace Homer_MVC.Controllers
             if (resultado)
             {
                 Session["usuario"] = model.Usuario;
+                log.Info($"Login: {model.Usuario}");
                 return RedirectToAction("ServiceRequest", "Service");
             }
             else
@@ -80,6 +82,7 @@ namespace Homer_MVC.Controllers
 
         public ActionResult Logout()
         {
+            log.Info($"Logout: {Session["usuario"]}");
             Session.Clear();
             return RedirectToAction("Login");
         }
@@ -138,6 +141,7 @@ namespace Homer_MVC.Controllers
             }
             catch (Exception ex)
             {
+                log.Error($"AutenticarUsuario fallo para usuario {strUsuario}", ex);
                 intError = 1;
                 strmensaje = "ERRROR: " + ex.Message;
                 return false;
@@ -178,8 +182,9 @@ namespace Homer_MVC.Controllers
                     val.Close();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log.Error($"CambiarClave fallo para usuario {_strusuario}", ex);
                 intError = 1;
                 strmensaje = "ERROR";
                 return false;
@@ -221,8 +226,9 @@ namespace Homer_MVC.Controllers
                     val.Close();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log.Error($"RestablecerClave fallo para usuario {strUsuario}", ex);
                 intError = 1;
                 strmensaje = "ERROR";
                 return false;
@@ -264,8 +270,9 @@ namespace Homer_MVC.Controllers
 
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log.Error($"DesbloquearUsuario fallo para usuario {strUsuario}", ex);
                 return false;
             }
         }
@@ -307,8 +314,9 @@ namespace Homer_MVC.Controllers
                     val.Close();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log.Error($"BuscarGrupos fallo para usuario {strUsuario}", ex);
                 intError = 1;
                 return list;
             }

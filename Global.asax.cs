@@ -24,10 +24,11 @@ namespace Homer_MVC
     {
         protected void Application_Start()
         {
+            log4net.Config.XmlConfigurator.Configure();
             System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             AntiForgeryConfig.UniqueClaimTypeIdentifier = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn";
             //LoginAD.Conexion conex = new LoginAD.Conexion(@"LDAP://unis.local/dc=unis,dc=local");
-     
+            
             AreaRegistration.RegisterAllAreas();
             WebApiConfig.Register(GlobalConfiguration.Configuration);
             FilterConfig.RegisterGlobalFilters(GlobalFilters.Filters);

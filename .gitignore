@@ -19,3 +19,10 @@ packages/
 *.nupkg
 *.zip
 *.rar
+
+# Analisis SonarQube
+.sonarqube/
+
+# Logs y adjuntos subidos por usuarios (datos personales)
+App_Data/Logs/
+ArchivosAdjuntos/

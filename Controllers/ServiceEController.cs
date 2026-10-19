@@ -1,6 +1,7 @@
 ﻿using GemBox.Email;
 using GemBox.Email.Smtp;
 using Homer_MVC.Models;
+using Homer_MVC.Services;
 using Newtonsoft.Json;
 using Oracle.ManagedDataAccess.Client;
 using Recaptcha.Web;
@@ -11,6 +12,7 @@ using System.Data;
 using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
 using System.IO;
 using System.Linq;
+using System.Configuration;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Web;
@@ -21,6 +23,7 @@ namespace Homer_MVC.Controllers
 {
     public class ServiceEController : Controller
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(ServiceEController));
         private DCS_UNISEntities db = new DCS_UNISEntities();
         private OracleDbContext dbContext = new OracleDbContext();
 
@@ -30,7 +33,7 @@ namespace Homer_MVC.Controllers
 
         [AllowAnonymous]
         [OutputCache(NoStore = true, Duration = 0, VaryByParam = "*")]
-        public ActionResult ServiceERequest(int? IsSuccess = 0, string d = "", string q = "")
+        public ActionResult ServiceERequest(int? IsSuccess = 0, string department = "", string description = "", int? tipoSolicitud = null)
         {
 
             ViewBag.EstadoCivil = false;
@@ -38,40 +41,50 @@ namespace Homer_MVC.Controllers
 
             var model = ObtieneCookies("SRV-INFO") ?? new MailExt(); // NUNCA null
 
-            if (!string.IsNullOrEmpty(d))
+            if (!string.IsNullOrEmpty(department))
             {
-                model.Nombre_Departamento = d; // este debe coincidir con el campo <select> del form
+                model.Nombre_Departamento = department; // este debe coincidir con el campo <select> del form
             }
 
-            if (!string.IsNullOrEmpty(q))
+            if (!string.IsNullOrEmpty(description))
             {
-                model.problema = q; // este debe coincidir con el textarea/input de la descripción
+                model.problema = description; // este debe coincidir con el textarea/input de la descripción
+            }
+
+            if (tipoSolicitud.HasValue)
+            {
+                model.Nombre_Producto = tipoSolicitud.Value.ToString(); // debe coincidir con ID_TIPO_SOLICITUD
             }
 
             CargarListas(model);                                     // llena listas con seguridad
             return View(model);
         }
+        // Ver ServiceController.CargarListas y Helpers/CatalogoDcs.cs
         private void CargarListas(MailExt m)
         {
-            m.Departamentos = dbContext.Departamento
-                .Select(d => new SelectListItem { Value = d.ID_DEPARTAMENTO.ToString(), Text = d.NOMBRE_DEPTO })
-                .ToList();
+            var catalogo = new CatalogoDcs(dbContext);
 
-            int depId;
-            if (int.TryParse(m.Nombre_Departamento, out depId) && depId > 0)
+            var tipoId = CatalogoDcs.ParseId(m.Nombre_Producto);
+            if (tipoId != null && CatalogoDcs.ParseId(m.Nombre_Categoria) == null)
             {
-                m.Productos = dbContext.Producto
-                    .Where(p => p.ID_CATEGORIA == depId)
-                    .Select(p => new SelectListItem { Value = p.ID_PRODUCTO.ToString(), Text = p.NOMBRE_PRODUCTO })
-                    .ToList();
+                var catId = catalogo.CategoriaDeTipo(tipoId.Value);
+                var depId = catId != null ? catalogo.DepartamentoDeCategoria(catId.Value) : null;
+                if (depId != null)
+                {
+                    m.Nombre_Categoria = catId.ToString();
+                    m.Nombre_Departamento = depId.ToString();
+                }
+                else
+                {
+                    m.Nombre_Producto = null;
+                }
             }
-            else
-            {
-                m.Productos = dbContext.Producto
-                    .Select(p => new SelectListItem { Value = p.ID_PRODUCTO.ToString(), Text = p.NOMBRE_PRODUCTO })
-                    .ToList();
-            }
+
+            m.Departamentos = catalogo.Departamentos();
+            m.Categorias = catalogo.Categorias(CatalogoDcs.ParseId(m.Nombre_Departamento));
+            m.Productos = catalogo.Tipos(CatalogoDcs.ParseId(m.Nombre_Categoria));
         }
+
         public string GetEmplidByDpi(string dpi)
         {
             string constr = Session["conexion_txt"].ToString();
@@ -97,23 +110,18 @@ namespace Homer_MVC.Controllers
             }
             return emplid;
         }
-        public ActionResult TestDepartamento(int? department, string query, string user_rol)
-        {
-            return Content("OK - entro a TestDepartamento");
-        }
-        public ActionResult GetDepartamento(int? department, string query, string user_rol)
-        {
-            return Content($"OK GET - dept: {department}, query: {query}, rol: {user_rol}");
-        }
 
-
-        public ActionResult GetForm(int? department, string query, string user_rol)
+        public ActionResult GetForm(int? department, string description, int? tipoSolicitud, string origen, string user_rol)
         {
             try {
                 Session.Remove("department");
                 Session.Remove("query");
+                Session.Remove("tipoSolicitud");
+                Session.Remove("origen");
                 Session["department"] = department;
-                Session["query"] = query;
+                Session["query"] = description;
+                Session["tipoSolicitud"] = tipoSolicitud;
+                Session["origen"] = origen;
 
 
                 if (string.IsNullOrEmpty(user_rol))
@@ -125,32 +133,34 @@ namespace Homer_MVC.Controllers
 
                 if (rol == "estudiante" || rol == "administrativo")
                 {
-                    var _d = Session["department"];
-                    var _q = Session["query"];
+                    var sessionDepartment = Session["department"];
+                    var sessionDescription = Session["query"];
+                    var sessionTipoSolicitud = Session["tipoSolicitud"];
+                    var sessionOrigen = Session["origen"];
 
-                    if (_d == null && _q == null)
+                    if (sessionDepartment == null && sessionDescription == null && sessionTipoSolicitud == null && sessionOrigen == null)
                     {
-                        return RedirectToAction("ServiceRequest", "Service", new { IsSuccess = 0, d = department, q = query });
+                        return RedirectToAction("ServiceRequest", "Service", new { IsSuccess = 0, department = department, description = description, tipoSolicitud = tipoSolicitud, origen = origen });
 
                     }
                     else
                     {
-                        return RedirectToAction("ServiceRequest", "Service", new { IsSuccess = 0, d = _d, q = _q });
+                        return RedirectToAction("ServiceRequest", "Service", new { IsSuccess = 0, department = sessionDepartment, description = sessionDescription, tipoSolicitud = sessionTipoSolicitud, origen = sessionOrigen });
                     }
                 }
 
                 if (rol == "externo")
                 {
-                    return RedirectToAction("ServiceERequest", "ServiceE", new { IsSuccess = 0, d = department, q = query });
+                    return RedirectToAction("ServiceERequest", "ServiceE", new { IsSuccess = 0, department = department, description = description, tipoSolicitud = tipoSolicitud, origen = origen });
                 }
 
             }
             catch (Exception ex)
             {
-                return RedirectToAction("ServiceERequest", "ServiceE", new { IsSuccess = 0, d = department, q = query });
+                return RedirectToAction("ServiceERequest", "ServiceE", new { IsSuccess = 0, department = department, description = description, tipoSolicitud = tipoSolicitud, origen = origen });
             }
 
-            return RedirectToAction("ServiceERequest", "ServiceE", new { IsSuccess = 0, d = department, q = query });
+            return RedirectToAction("ServiceERequest", "ServiceE", new { IsSuccess = 0, department = department, description = description, tipoSolicitud = tipoSolicitud, origen = origen });
         }
 
 
@@ -184,7 +194,7 @@ namespace Homer_MVC.Controllers
         [AllowAnonymous]
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult ServiceERequest([Bind(Include = "Nombre_Departamento,IdCampus,Nombre_Producto,PrimerNombre,SegundoNombre,PrimerApellido,SegundoApellido,CUI,correo,problema,ArchivoAdjunto")] MailExt mail)
+        public ActionResult ServiceERequest([Bind(Include = "Nombre_Departamento,Nombre_Categoria,IdCampus,Nombre_Producto,PrimerNombre,SegundoNombre,PrimerApellido,SegundoApellido,CUI,correo,problema,ArchivoAdjunto")] MailExt mail)
         {
             var recaptchaHelper = this.GetRecaptchaVerificationHelper();
             string nombreArchivo = "";
@@ -239,33 +249,85 @@ namespace Homer_MVC.Controllers
 
             if (ModelState.IsValid)
             {
-                List<ProductoModel> Subject;
                 string sub = "", sub_completo = "", cola = "";
+                int? idTipoSolicitud = CatalogoDcs.ParseId(mail.Nombre_Producto);
+                int? idDepartamentoForm = CatalogoDcs.ParseId(mail.Nombre_Departamento);
                 try
                 {
-                    Subject = (from x in dbContext.Producto select x).ToList();//se obtiene la lista de productos
-                    var registro = Subject.Where(p => p.ID_PRODUCTO == Int32.Parse(mail.Nombre_Producto)).FirstOrDefault();//se obtiene el producto seleccionado
-                    sub = registro.NOMBRE_PRODUCTO;//se obtiene el nombre del producto
-                    cola = (from x in dbContext.Departamento
-                            where x.ID_DEPARTAMENTO == registro.ID_CATEGORIA
-                            select x.CORREO_EXTERNO).FirstOrDefault();//se obtiene la cola del producto
+                    // Con tipo: cola de Fusion del tipo. Solo departamento: canal de Fusion del departamento.
+                    var catalogo = new CatalogoDcs(dbContext);
+                    var registro = idTipoSolicitud == null
+                        ? null
+                        : dbContext.TipoSolicitud.FirstOrDefault(t => t.ID_TIPO_SOLICITUD == idTipoSolicitud);
+                    sub = registro != null ? registro.NOMBRE_TIPO_SOLICITUD : catalogo.NombreDepartamento(idDepartamentoForm);
+                    cola = catalogo.CorreoDestino(registro, idDepartamentoForm, externo: true);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.InnerException);
+                    log.Error("ServiceERequest: lookup de tipo de solicitud/categoria/departamento", ex);
                 }
-                string enlaceServidor = Request.Url.GetLeftPart(UriPartial.Authority) + Url.Content("~/ArchivosAdjuntos/" + storedName);
+                string lineaAdjunto = string.IsNullOrEmpty(storedName)
+                    ? ""
+                    : "Archivo Adjunto: " + Request.Url.GetLeftPart(UriPartial.Authority) + Url.Content("~/ArchivosAdjuntos/" + storedName);
                 string body = "Nombres: " + mail.PrimerNombre + " " + mail.SegundoNombre + "\n"
                     + "Apellidos: " + mail.PrimerApellido + " " + mail.SegundoApellido + "\n"
                     //+ "CUI: " + mail.CUI + "\n"
                     + "Correo: " + mail.correo + "\n"
                     + "Producto: " + sub + "\n\n"
                     + "Solicitud: " + mail.problema + "\n\n"
-                     + "Archivo Adjunto: " + enlaceServidor;
+                     + lineaAdjunto;
 
-                sub_completo = "Solicitud: " + sub;
+                var solicitud = new SolicitudModel
+                {
+                    ID_TIPO_SOLICITUD = idTipoSolicitud,
+                    ID_DEPARTAMENTO = idDepartamentoForm,
+                    EMAIL_SOLICITANTE = mail.correo,
+                    DESCRIPCION = mail.problema,
+                    FECHA_CREACION = DateTime.Now,
+                    ESTADO = "PENDIENTE",
+                    ORIGEN = Session["origen"]?.ToString()
+                };
 
-                SendMail(cola, mail.correo, sub_completo, body); //método para enviar el correo
+                if (string.IsNullOrEmpty(cola))
+                {
+                    solicitud.ESTADO = "ERROR";
+                    dbContext.Solicitud.Add(solicitud);
+                    dbContext.SaveChanges();
+                    log.Error("ServiceERequest: sin correo de destino para ID_TIPO_SOLICITUD " + idTipoSolicitud + " / ID_DEPARTAMENTO " + idDepartamentoForm);
+                    ModelState.AddModelError("", "No se pudo determinar el departamento destino. Contacta a soporte.");
+                    CargarListas(mail);
+                    ViewBag.success = "error";
+                    return View(mail);
+                }
+
+                // Igual que ServiceController: el ID va en el asunto como [DCS-<id>] para encontrar el SR
+                dbContext.Solicitud.Add(solicitud);
+                dbContext.SaveChanges();
+                int idSolicitud = solicitud.ID_SOLICITUD.Value;
+                string tag = OracleFusionService.SolicitudTag(idSolicitud);
+                sub_completo = tag + " Solicitud: " + sub;
+
+                try
+                {
+                    string overrideRecipient = ConfigurationManager.AppSettings["DcsMail:OverrideRecipient"];
+                    string destinatario = !string.IsNullOrEmpty(overrideRecipient) ? overrideRecipient : cola;
+                    SendMail(destinatario, mail.correo, sub_completo, body); //método para enviar el correo
+                    solicitud.ESTADO = "ENVIADO";
+                }
+                catch (Exception ex)
+                {
+                    solicitud.ESTADO = "ERROR";
+                    log.Error("ServiceERequest: fallo el envio de correo", ex);
+                }
+                dbContext.SaveChanges();
+
+                if (solicitud.ESTADO == "ENVIADO")
+                {
+                    string nombres = (mail.PrimerNombre + " " + mail.SegundoNombre).Trim();
+                    string apellidos = (mail.PrimerApellido + " " + mail.SegundoApellido).Trim();
+                    ServiceController.VincularSrDelCorreo(idSolicitud, tag, nombres, apellidos, mail.correo, null);
+                }
+
                 AlmacenaCookies(mail.correo, "", mail.PrimerNombre, mail.SegundoNombre, mail.PrimerApellido, mail.SegundoNombre, mail.ArchivoAdjunto);
                 return RedirectToAction("ServiceERequest", "ServiceE", new { IsSuccess = 1 });
 
@@ -282,21 +344,10 @@ namespace Homer_MVC.Controllers
 
         public void SendMail(string receiver, string sender, string subject, string body)
         {
-            string manageMailAccount = "";
-            string ManageMailPass = "";
-            try
-            {
-                var registro = dbContext.Parametro.Where(p => p.PARAMETRO.Equals("manageMailAccount")).FirstOrDefault();
-                var registro2 = dbContext.Parametro.Where(p => p.PARAMETRO.Equals("manageAppGPass")).FirstOrDefault();
-                manageMailAccount = registro.VALOR;
-                ManageMailPass = registro2.VALOR;
-
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.InnerException.ToString());
-            }
-
+            // Las credenciales ya no viven en TBL_DCS_PARAMETRO (se guardaban en texto plano).
+            // Ahora salen de Web.config / secrets.
+            string manageMailAccount = System.Configuration.ConfigurationManager.AppSettings["DcsMail:Account"];
+            string ManageMailPass = System.Configuration.ConfigurationManager.AppSettings["DcsMail:Password"];
 
             // Create new message.
             ComponentInfo.SetLicense("FREE-LIMITED-KEY");
@@ -383,18 +434,14 @@ namespace Homer_MVC.Controllers
 
         }
 
-        public JsonResult GetProductosList(int departamentoId)
+        // Dropdowns encadenados del form: {Value, Text} de SelectListItem
+        public JsonResult GetCategoriasList(int departamentoId)
         {
-            var productos = dbContext.Producto
-                .Where(x => x.ID_CATEGORIA == departamentoId)
-                .Select(x => new
-                {
-                    x.ID_PRODUCTO,
-                    x.NOMBRE_PRODUCTO
-                })
-                .ToList();
-
-            return Json(productos, JsonRequestBehavior.AllowGet);
+            return Json(new CatalogoDcs(dbContext).Categorias(departamentoId), JsonRequestBehavior.AllowGet);
+        }
+        public JsonResult GetProductosList(int categoriaId)
+        {
+            return Json(new CatalogoDcs(dbContext).Tipos(categoriaId), JsonRequestBehavior.AllowGet);
         }
 
 

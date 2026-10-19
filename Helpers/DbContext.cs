@@ -7,7 +7,7 @@ public class OracleDbContext : DbContext
         : base("name=OracleDbContext") // cadena en Web.config
     {
     }
-    public  DbSet<ProductoModel> Producto { get; set; }
+    public  DbSet<TipoSolicitudModel> TipoSolicitud { get; set; }
     public  DbSet<CategoriaModel> Categoria { get; set; }
     public  DbSet<DepartamentoModel> Departamento { get; set; }
     public DbSet<ParametroModel> Parametro { get; set; }

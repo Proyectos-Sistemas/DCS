@@ -107,7 +107,7 @@
                             <div class="col-lg-9">
                                 <div class="row">
                                     <div class="col-lg-3">
-                                        <label>Departamento o Facultad </label>
+                                        <label>*Departamento o Facultad </label>
                                     </div>
                                     <div class="form-group col-lg-9">
                                         @Html.DropDownListFor(model => model.Nombre_Departamento, Model.Departamentos, "Selecciona", new { @class = "form-control" })
@@ -118,7 +118,15 @@
                                 </div>
                                 <div class="row">
                                     <div class="col-lg-3">
-                                        <label>*Solicitud  </label>
+                                        <label>Categoría (opcional)</label>
+                                    </div>
+                                    <div class="form-group col-lg-9">
+                                        @Html.DropDownListFor(model => model.Nombre_Categoria, Model.Categorias, "Selecciona", new { @class = "form-control" })
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-lg-3">
+                                        <label>Solicitud (opcional)</label>
                                     </div>
                                     <div class="form-group col-lg-9">
 
@@ -207,6 +215,7 @@
 
 
             $('#Nombre_Departamento').chosen();
+            $('#Nombre_Categoria').chosen();
             $('#Nombre_Producto').chosen();
 
 
@@ -232,17 +241,30 @@
             //document.getElementById("Nombre_Categoria_chosen").style.width = "300px";
             //document.getElementById("Nombre_Producto_chosen").style.width = "300px";
 
+            // Departamento -> Categoria -> Solicitud. data = [{ Value, Text }]
+            function llenarSelect(selector, data) {
+                var $sel = $(selector).empty().append($("<option>").val("").text("Selecciona"));
+                $.each(data || [], function (index, row) {
+                    $sel.append($("<option>").val(row.Value).text(row.Text));
+                });
+                $sel.trigger("chosen:updated");
+            }
+
             $("#Nombre_Departamento").change(function () {
-                $.get("/Service/GetProductosList",
-                    { departamentoId: $("#Nombre_Departamento").val() },
-                    function (data) {
-                        $("#Nombre_Producto").empty();
-                        $("#Nombre_Producto").append("<option value>     </option>");
-                        $.each(data, function (index, row) {
-                            $("#Nombre_Producto").append("<option value='" + row.ID_PRODUCTO + "'>" + row.NOMBRE_PRODUCTO + "</option>");
-                        });
-                        $('#Nombre_Producto').trigger("chosen:updated");
-                    });
+                llenarSelect("#Nombre_Producto", []);
+                var depId = $(this).val();
+                if (!depId) { llenarSelect("#Nombre_Categoria", []); return; }
+                $.get("/Service/GetCategoriasList", { departamentoId: depId }, function (data) {
+                    llenarSelect("#Nombre_Categoria", data);
+                });
+            });
+
+            $("#Nombre_Categoria").change(function () {
+                var catId = $(this).val();
+                if (!catId) { llenarSelect("#Nombre_Producto", []); return; }
+                $.get("/Service/GetProductosList", { categoriaId: catId }, function (data) {
+                    llenarSelect("#Nombre_Producto", data);
+                });
             });
 
             @*var isSuccess = "@ViewBag.success"
