@@ -1,26 +1,32 @@
 ﻿using GemBox.Email;
 using GemBox.Email.Smtp;
 using Homer_MVC.Models;
+using Homer_MVC.Services;
 using Oracle.ManagedDataAccess.Client;
 using Recaptcha.Web;
 using Recaptcha.Web.Mvc;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data;
 using System.Data.Entity;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
 using System.Web.UI;
+
 
 namespace Homer_MVC.Controllers
 {
     public class ServiceController : Controller
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(ServiceController));
         //private DCS_UNISEntities db = new DCS_UNISEntities();
         private OracleDbContext dbContext = new OracleDbContext(); // Contexto de la base de datos
+        private OracleFusionService fusionService = new OracleFusionService();
 
         string CurrentDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
@@ -28,7 +34,7 @@ namespace Homer_MVC.Controllers
 
         // GET: Service
         [Authorize]
-        public ActionResult ServiceRequest(int? IsSuccess = 0, string d = "", string q = "")
+        public ActionResult ServiceRequest(int? IsSuccess = 0, string department = "", string description = "", int? tipoSolicitud = null, string origen = "")
         {
 
             LeerInfoTxt();
@@ -66,22 +72,36 @@ namespace Homer_MVC.Controllers
             try
             {
 
-                if (string.IsNullOrEmpty(d))
+                if (string.IsNullOrEmpty(department))
                 {
-                    d = Session["department"].ToString();
+                    department = Session["department"]?.ToString() ?? "";
                 }
 
-                if (string.IsNullOrEmpty(q))
+                if (string.IsNullOrEmpty(description))
                 {
-                    q = Session["query"].ToString();
+                    description = Session["query"]?.ToString() ?? "";
 
                 }
+
+                if (tipoSolicitud == null)
+                {
+                    tipoSolicitud = Session["tipoSolicitud"] as int?;
+                }
+
+                if (string.IsNullOrEmpty(origen))
+                {
+                    origen = Session["origen"]?.ToString() ?? "";
+                }
+                else
+                {
+                    Session["origen"] = origen;
+                }
             }
-            catch (Exception ex) { 
-            
+            catch (Exception ex) {
+
             }
 
-            return MostrarInformacion(emplid,d,q);
+            return MostrarInformacion(emplid,department,description,tipoSolicitud);
 
             //return MostrarInformacion("00000021543");
             //return MostrarInformacion("00000023478");
@@ -89,26 +109,32 @@ namespace Homer_MVC.Controllers
 
         }
 
+        // Departamento (obligatorio) -> Categoria -> Solicitud; ver Helpers/CatalogoDcs.cs
         private void CargarListas(MailEAModel m)
         {
-            m.Departamentos = dbContext.Departamento
-                .Select(d => new SelectListItem { Value = d.ID_DEPARTAMENTO.ToString(), Text = d.NOMBRE_DEPTO })
-                .ToList();
+            var catalogo = new CatalogoDcs(dbContext);
 
-            int depId;
-            if (int.TryParse(m.Nombre_Departamento, out depId) && depId > 0)
+            // Tipo preseleccionado (link con tipoSolicitud) sin categoria: se deducen categoria y departamento,
+            // asi el form queda consistente aunque el link traiga otro departamento
+            var tipoId = CatalogoDcs.ParseId(m.Nombre_Producto);
+            if (tipoId != null && CatalogoDcs.ParseId(m.Nombre_Categoria) == null)
             {
-                m.Productos = dbContext.Producto
-                    .Where(p => p.ID_CATEGORIA == depId)
-                    .Select(p => new SelectListItem { Value = p.ID_PRODUCTO.ToString(), Text = p.NOMBRE_PRODUCTO })
-                    .ToList();
+                var catId = catalogo.CategoriaDeTipo(tipoId.Value);
+                var depId = catId != null ? catalogo.DepartamentoDeCategoria(catId.Value) : null;
+                if (depId != null)
+                {
+                    m.Nombre_Categoria = catId.ToString();
+                    m.Nombre_Departamento = depId.ToString();
+                }
+                else
+                {
+                    m.Nombre_Producto = null;   // tipo inexistente o sin departamento: se ignora
+                }
             }
-            else
-            {
-                m.Productos = dbContext.Producto
-                    .Select(p => new SelectListItem { Value = p.ID_PRODUCTO.ToString(), Text = p.NOMBRE_PRODUCTO })
-                    .ToList();
-            }
+
+            m.Departamentos = catalogo.Departamentos();
+            m.Categorias = catalogo.Categorias(CatalogoDcs.ParseId(m.Nombre_Departamento));
+            m.Productos = catalogo.Tipos(CatalogoDcs.ParseId(m.Nombre_Categoria));
         }
 
 
@@ -154,7 +180,7 @@ namespace Homer_MVC.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult ServiceRequest([Bind(Include = "Nombre_Departamento,IdCampus,Nombre_Producto,Nombres,Apellidos,ApellidoCasada,CUI,correo,problema,ArchivoAdjunto")] MailEAModel mail)
+        public async Task<ActionResult> ServiceRequest([Bind(Include = "Nombre_Departamento,Nombre_Categoria,IdCampus,Nombre_Producto,Nombres,Apellidos,ApellidoCasada,CUI,correo,problema,ArchivoAdjunto")] MailEAModel mail)
         {
             var recaptchaHelper = this.GetRecaptchaVerificationHelper();
             var estadoCivil = ViewData["EstadoCivil"] ;
@@ -200,23 +226,26 @@ namespace Homer_MVC.Controllers
 
             if (ModelState.IsValid)
             {
-                List<ProductoModel> Subject;
                 string sub = "", sub_completo = "", cola = "";
+                int? idTipoSolicitud = CatalogoDcs.ParseId(mail.Nombre_Producto);
+                int? idDepartamentoForm = CatalogoDcs.ParseId(mail.Nombre_Departamento);
                 try
                 {
-                    Subject = (from x in dbContext.Producto select x).ToList();
-                    var registro = Subject.Where(p => p.ID_PRODUCTO == Int32.Parse(mail.Nombre_Producto)).FirstOrDefault();
-                    sub = registro.NOMBRE_PRODUCTO;
-                    cola = cola = (from x in dbContext.Departamento
-                                   where x.ID_DEPARTAMENTO == registro.ID_CATEGORIA
-                                   select x.CORREO_NOTIFICACION).FirstOrDefault();//se obtiene la cola del producto;
+                    // Con tipo: cola de Fusion del tipo (101..108). Solo departamento: canal de Fusion del departamento.
+                    var catalogo = new CatalogoDcs(dbContext);
+                    var registro = idTipoSolicitud == null
+                        ? null
+                        : dbContext.TipoSolicitud.FirstOrDefault(t => t.ID_TIPO_SOLICITUD == idTipoSolicitud);
+                    sub = registro != null ? registro.NOMBRE_TIPO_SOLICITUD : catalogo.NombreDepartamento(idDepartamentoForm);
+                    cola = catalogo.CorreoDestino(registro, idDepartamentoForm, externo: false);
                 }
                 catch (Exception ex)
                 {
-
-                    Console.WriteLine(ex.InnerException);
+                    log.Error("ServiceRequest: lookup de tipo de solicitud/categoria/departamento", ex);
                 }
-                string enlaceServidor = Request.Url.GetLeftPart(UriPartial.Authority) + Url.Content("~/ArchivosAdjuntos/" + storedName);
+                string lineaAdjunto = string.IsNullOrEmpty(storedName)
+                    ? ""
+                    : "Archivo Adjunto: " + Request.Url.GetLeftPart(UriPartial.Authority) + Url.Content("~/ArchivosAdjuntos/" + storedName);
                 string body = "Nombres: " + mail.Nombres + "\n"
                     + "Apellidos: " + mail.Apellidos + "\n"
                     + (estadoCivil != null ? "Apellido de Casada: " + mail.ApellidoCasada : "") + "\n"
@@ -225,13 +254,79 @@ namespace Homer_MVC.Controllers
                     + "Correo: " + mail.correo + "\n"
                     + "Producto: " + sub + "\n\n"
                     + "Solicitud: " + mail.problema + "\n\n"
-                     + "Archivo Adjunto: " + enlaceServidor;
+                     + lineaAdjunto;
 
-                sub_completo = "Solicitud: " + sub;
+                var solicitud = new SolicitudModel
+                {
+                    ID_TIPO_SOLICITUD = idTipoSolicitud,
+                    ID_DEPARTAMENTO = idDepartamentoForm,
+                    EMAIL_SOLICITANTE = mail.correo,
+                    DESCRIPCION = mail.problema,
+                    FECHA_CREACION = DateTime.Now,
+                    ESTADO = "PENDIENTE",
+                    ORIGEN = Session["origen"]?.ToString()
+                };
 
-                SendMail(cola, mail.correo, sub_completo, body); //método para enviar el correo
+                if (string.IsNullOrEmpty(cola))
+                {
+                    // Sin departamento resuelto no hay a donde enviar. Antes esto tronaba con una
+                    // excepcion al construir el MailAddress (el bug original de la categoria 25 huerfana).
+                    solicitud.ESTADO = "ERROR";
+                    dbContext.Solicitud.Add(solicitud);
+                    dbContext.SaveChanges();
+                    log.Error("ServiceRequest: sin correo de destino para ID_TIPO_SOLICITUD " + idTipoSolicitud + " / ID_DEPARTAMENTO " + idDepartamentoForm);
+                    ModelState.AddModelError("", "No se pudo determinar el departamento destino. Contacta a soporte.");
+                    CargarListas(mail);
+                    ViewBag.success = "error";
+                    return View(mail);
+                }
+
+                // Se guarda antes del envio para tener el ID: va en el asunto como [DCS-<id>] y es lo
+                // que permite encontrar despues el SR que Fusion crea a partir del correo.
+                dbContext.Solicitud.Add(solicitud);
+                dbContext.SaveChanges();
+                int idSolicitud = solicitud.ID_SOLICITUD.Value;
+                string tag = OracleFusionService.SolicitudTag(idSolicitud);
+                sub_completo = tag + " Solicitud: " + sub;
+
+                try
+                {
+                    string overrideRecipient = ConfigurationManager.AppSettings["DcsMail:OverrideRecipient"];
+                    string destinatario = !string.IsNullOrEmpty(overrideRecipient) ? overrideRecipient : cola;
+                    SendMail(destinatario, mail.correo, sub_completo, body); //método para enviar el correo
+                    solicitud.ESTADO = "ENVIADO";
+                }
+                catch (Exception ex)
+                {
+                    solicitud.ESTADO = "ERROR";
+                    log.Error("ServiceRequest: fallo el envio de correo", ex);
+                }
+
+                // Solo para pruebas: ademas del correo, crea el SR via API de Fusion.
+                // No afecta ESTADO (ese sigue reflejando el envio de correo).
+                bool createSrViaApi = ConfigurationManager.AppSettings["OracleFusion:CreateSrViaApi"] == "true";
+                if (createSrViaApi)
+                {
+                    try
+                    {
+                        var srNumber = await fusionService.CreateServiceRequestForSolicitudAsync(
+                            mail.Nombres, mail.Apellidos, mail.correo, mail.CUI, sub_completo, body);
+                        solicitud.NUMERO_SR = srNumber;
+                        log.Info("ServiceRequest: SR creado en Fusion " + srNumber);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error("ServiceRequest: fallo la creacion del SR via Fusion API", ex);
+                    }
+                }
+                else if (solicitud.ESTADO == "ENVIADO")
+                {
+                    VincularSrDelCorreo(idSolicitud, tag, mail.Nombres, mail.Apellidos, mail.correo, mail.CUI);
+                }
+
+                dbContext.SaveChanges();
+
                 AlmacenaCookies(mail.correo, mail.CUI, mail.Nombres, mail.Apellidos, mail.problema, mail.ApellidoCasada, mail.ArchivoAdjunto);
-
 
                 return RedirectToAction("ServiceRequest", new { IsSuccess = 1 });
             }
@@ -243,21 +338,57 @@ namespace Homer_MVC.Controllers
                 return View(mail);
             }
         }
+        private static readonly TimeSpan SrLinkIntervalo = TimeSpan.FromMinutes(2);
+        private const int SrLinkMaxIntentos = 15; // ~30 minutos
+
+        /// <summary>
+        /// Fusion crea el SR desde el correo de forma asincrona: se busca por el tag del asunto cada
+        /// 2 minutos hasta por 30, y al encontrarlo se completa Contacto/Cuenta y se guarda NUMERO_SR.
+        /// .NET 4.5.1 no tiene HostingEnvironment.QueueBackgroundWorkItem; si IIS recicla el app
+        /// pool durante la espera, esa solicitud queda con NUMERO_SR null y hay que vincularla a mano.
+        /// </summary>
+        internal static void VincularSrDelCorreo(int idSolicitud, string tag, string firstName, string lastName, string email, string nationalId)
+        {
+            Task.Run(async () =>
+            {
+                var fusion = new OracleFusionService();
+                for (int intento = 1; intento <= SrLinkMaxIntentos; intento++)
+                {
+                    await Task.Delay(SrLinkIntervalo);
+                    try
+                    {
+                        var srNumber = await fusion.FindServiceRequestByTitleTagAsync(tag);
+                        if (srNumber == null)
+                        {
+                            continue;
+                        }
+
+                        await fusion.UpdateServiceRequestForSolicitudAsync(srNumber, firstName, lastName, email, nationalId);
+                        using (var db = new OracleDbContext())
+                        {
+                            var solicitud = db.Solicitud.First(s => s.ID_SOLICITUD == idSolicitud);
+                            solicitud.NUMERO_SR = srNumber;
+                            db.SaveChanges();
+                        }
+                        log.Info($"ServiceRequest: {tag} vinculado a {srNumber} (intento {intento})");
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"ServiceRequest: fallo la vinculacion de {tag} (intento {intento})", ex);
+                    }
+                }
+                log.Error($"ServiceRequest: no se encontro en Fusion un SR con {tag} tras {SrLinkMaxIntentos} intentos; vincular a mano");
+            });
+        }
+
         public void SendMail(string receiver, string sender, string subject, string body)
         {
-            string manageMailAccount = "";
-            string ManageMailPass = "";
-            try
-            {
-                var registro = dbContext.Parametro.Where(p => p.PARAMETRO.Equals("manageMailAccount")).FirstOrDefault();
-                var registro2 = dbContext.Parametro.Where(p => p.PARAMETRO.Equals("manageAppGPass")).FirstOrDefault();
-                manageMailAccount = registro.VALOR;
-                ManageMailPass = registro2.VALOR;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.InnerException.ToString());
-            }
+            // Las credenciales ya no viven en TBL_DCS_PARAMETRO (se guardaban en texto plano).
+            // Ahora salen de Web.config / secrets.
+            string manageMailAccount = ConfigurationManager.AppSettings["DcsMail:Account"];
+            string ManageMailPass = ConfigurationManager.AppSettings["DcsMail:Password"];
+
             // Create new message.
             ComponentInfo.SetLicense("FREE-LIMITED-KEY");
             MailMessage message = new MailMessage(
@@ -340,22 +471,28 @@ namespace Homer_MVC.Controllers
             }
 
         }
-        public JsonResult GetProductosList(int departamentoId)
+        // Dropdowns encadenados del form: {Value, Text} de SelectListItem
+        public JsonResult GetCategoriasList(int departamentoId)
         {
-            var productos = dbContext.Producto
-                .Where(x => x.ID_CATEGORIA == departamentoId)
-                .Select(x => new
-                {
-                    x.ID_PRODUCTO,
-                    x.NOMBRE_PRODUCTO
-                })
-                .ToList();
-
-            return Json(productos, JsonRequestBehavior.AllowGet);
+            return Json(new CatalogoDcs(dbContext).Categorias(departamentoId), JsonRequestBehavior.AllowGet);
         }
-        public ActionResult MostrarInformacion(string emplid, string d, string q)
+        public JsonResult GetProductosList(int categoriaId)
+        {
+            return Json(new CatalogoDcs(dbContext).Tipos(categoriaId), JsonRequestBehavior.AllowGet);
+        }
+        public ActionResult MostrarInformacion(string emplid, string department, string description, int? tipoSolicitud = null)
         {
             var modelo = new MailEAModel();
+
+            // Prellenado del link (chatbot) antes de cargar las listas: Categorias/Productos dependen
+            // del departamento y del tipo. Antes se cargaban vacias y el prellenado solo pasaba si
+            // PeopleSoft devolvia la persona.
+            if (!string.IsNullOrEmpty(department))
+                modelo.Nombre_Departamento = department;
+            if (!string.IsNullOrEmpty(description))
+                modelo.problema = description;
+            if (tipoSolicitud.HasValue)
+                modelo.Nombre_Producto = tipoSolicitud.Value.ToString();
 
             CargarListas(modelo);
 
@@ -462,17 +599,6 @@ namespace Homer_MVC.Controllers
 
                             ViewData["EstadoCivil"] = "C";
                         }
-                        if (!string.IsNullOrEmpty(d))
-                        {
-                            modelo.Nombre_Departamento = d; // este debe coincidir con el campo <select> del form
-                        }
-
-                        if (!string.IsNullOrEmpty(q))
-                        {
-                            modelo.problema = q; // este debe coincidir con el textarea/input de la descripción
-                        }
-
-
                         modelo.correo = reader["EMAILUNIS"].ToString();
                         modelo.CUI = reader["DPI"].ToString();
 

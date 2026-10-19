@@ -12,67 +12,35 @@ namespace Homer_MVC.Services
 {
     public class OracleFusionService
     {
+        // UTF8Encoding(false): Encoding.UTF8 emits a BOM via GetPreamble(), which StringContent
+        // writes at the start of the body. Fusion's serviceRequests parser rejects that BOM with
+        // "Unable to parse the provided payload" even though contacts/accounts tolerate it.
+        private static readonly UTF8Encoding JsonEncoding = new UTF8Encoding(false);
+        private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
+        {
+            NullValueHandling = NullValueHandling.Ignore
+        };
+
         private readonly string _baseUrl;
-        private readonly string _clientId;
-        private readonly string _clientSecret;
         private readonly string _username;
         private readonly string _password;
-        private readonly string _scope;
-        private string _accessToken;
-        private DateTime _tokenExpiry;
 
         public OracleFusionService()
         {
             _baseUrl = ConfigurationManager.AppSettings["OracleFusion:BaseUrl"] ?? "";
-            _clientId = ConfigurationManager.AppSettings["OracleFusion:ClientId"] ?? "";
-            _clientSecret = ConfigurationManager.AppSettings["OracleFusion:ClientSecret"] ?? "";
             _username = ConfigurationManager.AppSettings["OracleFusion:Username"] ?? "";
             _password = ConfigurationManager.AppSettings["OracleFusion:Password"] ?? "";
-            _scope = ConfigurationManager.AppSettings["OracleFusion:Scope"] ?? "crmRestApi";
         }
 
         /// <summary>
-        /// Obtiene un token de acceso OAuth2 de Oracle Fusion
+        /// Header HTTP Basic (usuario:password de Fusion en base64). Solo para pruebas;
+        /// producción debería usar OAuth2 contra el dominio de identidad (IDCS/OCI IAM),
+        /// no la URL de la app Fusion.
         /// </summary>
-        private async Task<string> GetAccessTokenAsync()
+        private string GetBasicAuthHeader()
         {
-            // Si el token existe y no ha expirado, retornarlo
-            if (!string.IsNullOrEmpty(_accessToken) && DateTime.Now < _tokenExpiry)
-            {
-                return _accessToken;
-            }
-
-            try
-            {
-                using (var client = new HttpClient())
-                {
-                    var tokenUrl = $"{_baseUrl}/oauth2/v1/token";
-                    var requestContent = new FormUrlEncodedContent(new[]
-                    {
-                        new KeyValuePair<string, string>("grant_type", "password"),
-                        new KeyValuePair<string, string>("username", _username),
-                        new KeyValuePair<string, string>("password", _password),
-                        new KeyValuePair<string, string>("client_id", _clientId),
-                        new KeyValuePair<string, string>("client_secret", _clientSecret),
-                        new KeyValuePair<string, string>("scope", _scope)
-                    });
-
-                    var response = await client.PostAsync(tokenUrl, requestContent);
-                    response.EnsureSuccessStatusCode();
-
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    var tokenResponse = JsonConvert.DeserializeObject<OracleOAuthResponse>(responseContent);
-
-                    _accessToken = tokenResponse.AccessToken;
-                    _tokenExpiry = DateTime.Now.AddSeconds(tokenResponse.ExpiresIn - 60); // Restar 60 segundos como margen
-
-                    return _accessToken;
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Error al obtener token de acceso de Oracle Fusion: {ex.Message}", ex);
-            }
+            var raw = Encoding.UTF8.GetBytes($"{_username}:{_password}");
+            return "Basic " + Convert.ToBase64String(raw);
         }
 
         /// <summary>
@@ -82,10 +50,9 @@ namespace Homer_MVC.Services
         {
             try
             {
-                var token = await GetAccessTokenAsync();
                 using (var client = new HttpClient())
                 {
-                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                    client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
                     client.DefaultRequestHeaders.Add("Accept", "application/json");
 
                     // Buscar por email
@@ -130,51 +97,29 @@ namespace Homer_MVC.Services
         }
 
         /// <summary>
-        /// Busca si existe un contacto por email o número de identificación
+        /// Busca un contacto por email. Un error de Fusion se lanza en vez de tratarse como
+        /// "no encontrado", para no crear contactos duplicados. (NationalId no es consultable
+        /// con q= en esta instancia: Fusion responde 400.)
         /// </summary>
-        public async Task<OracleSearchItem> SearchContactAsync(string email, string nationalId = null)
+        public async Task<OracleSearchItem> SearchContactAsync(string email)
         {
             try
             {
-                var token = await GetAccessTokenAsync();
                 using (var client = new HttpClient())
                 {
-                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                    client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
                     client.DefaultRequestHeaders.Add("Accept", "application/json");
 
-                    // Buscar por email
-                    var searchUrl = $"{_baseUrl}/crmRestApi/resources/latest/contacts?q=EmailAddress='{Uri.EscapeDataString(email)}'";
-                    
+                    var searchUrl = $"{_baseUrl}/crmRestApi/resources/latest/contacts?q=EmailAddress='{Uri.EscapeDataString(email)}'&fields=PartyNumber,PartyId&limit=1";
                     var response = await client.GetAsync(searchUrl);
-                    if (response.IsSuccessStatusCode)
+                    var content = await response.Content.ReadAsStringAsync();
+                    if (!response.IsSuccessStatusCode)
                     {
-                        var content = await response.Content.ReadAsStringAsync();
-                        var searchResponse = JsonConvert.DeserializeObject<OracleSearchResponse>(content);
-                        
-                        if (searchResponse?.Items != null && searchResponse.Items.Count > 0)
-                        {
-                            return searchResponse.Items[0];
-                        }
+                        throw new Exception($"Fusion respondio {(int)response.StatusCode}: {content}");
                     }
 
-                    // Si no se encuentra por email y hay nationalId, buscar por ese campo
-                    if (!string.IsNullOrEmpty(nationalId))
-                    {
-                        searchUrl = $"{_baseUrl}/crmRestApi/resources/latest/contacts?q=NationalId='{Uri.EscapeDataString(nationalId)}'";
-                        response = await client.GetAsync(searchUrl);
-                        if (response.IsSuccessStatusCode)
-                        {
-                            var content = await response.Content.ReadAsStringAsync();
-                            var searchResponse = JsonConvert.DeserializeObject<OracleSearchResponse>(content);
-                            
-                            if (searchResponse?.Items != null && searchResponse.Items.Count > 0)
-                            {
-                                return searchResponse.Items[0];
-                            }
-                        }
-                    }
-
-                    return null;
+                    var searchResponse = JsonConvert.DeserializeObject<OracleSearchResponse>(content);
+                    return searchResponse?.Items != null && searchResponse.Items.Count > 0 ? searchResponse.Items[0] : null;
                 }
             }
             catch (Exception ex)
@@ -190,21 +135,23 @@ namespace Homer_MVC.Services
         {
             try
             {
-                var token = await GetAccessTokenAsync();
                 using (var client = new HttpClient())
                 {
-                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                    client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
                     client.DefaultRequestHeaders.Add("Accept", "application/json");
-                    client.DefaultRequestHeaders.Add("Content-Type", "application/json");
 
-                    var accountJson = JsonConvert.SerializeObject(account);
-                    var content = new StringContent(accountJson, Encoding.UTF8, "application/json");
+                    var accountJson = JsonConvert.SerializeObject(account, JsonSettings);
+                    var content = new StringContent(accountJson, JsonEncoding, "application/json");
 
                     var createUrl = $"{_baseUrl}/crmRestApi/resources/latest/accounts";
                     var response = await client.PostAsync(createUrl, content);
-                    response.EnsureSuccessStatusCode();
-
                     var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        throw new Exception($"Fusion respondio {(int)response.StatusCode}: {responseContent}");
+                    }
+
                     var accountResponse = JsonConvert.DeserializeObject<OracleAccountResponse>(responseContent);
 
                     return accountResponse;
@@ -223,15 +170,13 @@ namespace Homer_MVC.Services
         {
             try
             {
-                var token = await GetAccessTokenAsync();
                 using (var client = new HttpClient())
                 {
-                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                    client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
                     client.DefaultRequestHeaders.Add("Accept", "application/json");
-                    client.DefaultRequestHeaders.Add("Content-Type", "application/json");
 
-                    var contactJson = JsonConvert.SerializeObject(contact);
-                    var content = new StringContent(contactJson, Encoding.UTF8, "application/json");
+                    var contactJson = JsonConvert.SerializeObject(contact, JsonSettings);
+                    var content = new StringContent(contactJson, JsonEncoding, "application/json");
 
                     var createUrl = $"{_baseUrl}/crmRestApi/resources/latest/contacts";
                     var response = await client.PostAsync(createUrl, content);
@@ -250,125 +195,217 @@ namespace Homer_MVC.Services
         }
 
         /// <summary>
-        /// Asigna un contacto como contacto principal de una cuenta
+        /// Crea un Service Request en Oracle Fusion
         /// </summary>
-        public async Task<bool> SetPrimaryContactAsync(string accountPartyNumber, string contactPartyNumber)
+        public async Task<OracleServiceRequestResponse> CreateServiceRequestAsync(OracleServiceRequest sr)
         {
             try
             {
-                var token = await GetAccessTokenAsync();
                 using (var client = new HttpClient())
                 {
-                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                    client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
                     client.DefaultRequestHeaders.Add("Accept", "application/json");
-                    client.DefaultRequestHeaders.Add("Content-Type", "application/json");
 
-                    var updateData = new
+                    var srJson = JsonConvert.SerializeObject(sr, JsonSettings);
+                    var content = new StringContent(srJson, JsonEncoding, "application/json");
+
+                    var createUrl = $"{_baseUrl}/crmRestApi/resources/latest/serviceRequests";
+                    var response = await client.PostAsync(createUrl, content);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
                     {
-                        PrimaryContact = new OracleContactReference
-                        {
-                            PartyNumber = contactPartyNumber
-                        }
-                    };
+                        throw new Exception($"Fusion respondio {(int)response.StatusCode}: {responseContent}");
+                    }
 
-                    var updateJson = JsonConvert.SerializeObject(updateData);
-                    var content = new StringContent(updateJson, Encoding.UTF8, "application/json");
-
-                    var updateUrl = $"{_baseUrl}/crmRestApi/resources/latest/accounts/{accountPartyNumber}";
-                    var request = new HttpRequestMessage(new HttpMethod("PATCH"), updateUrl)
-                    {
-                        Content = content
-                    };
-                    var response = await client.SendAsync(request);
-                    response.EnsureSuccessStatusCode();
-
-                    return true;
+                    return JsonConvert.DeserializeObject<OracleServiceRequestResponse>(responseContent);
                 }
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error al asignar contacto principal en Oracle Fusion: {ex.Message}", ex);
+                throw new Exception($"Error al crear Service Request en Oracle Fusion: {ex.Message}", ex);
             }
         }
 
         /// <summary>
-        /// Crea o actualiza una cuenta y asigna un contacto como principal
+        /// PATCH de Cuenta y Contacto principal en un SR existente. Usa los PartyId numericos:
+        /// en el describe los *PartyNumber son allowChanges=never (solo se pueden fijar al crear).
         /// </summary>
-        public async Task<string> CreateOrUpdateAccountWithContactAsync(
-            string firstName, 
-            string lastName, 
-            string middleName, 
-            string email, 
-            string phone, 
-            string nationalId,
-            string organizationName = null)
+        public async Task UpdateServiceRequestPartiesAsync(string srNumber, long contactPartyId, long accountPartyId)
         {
             try
             {
-                // Buscar si existe el contacto
-                var existingContact = await SearchContactAsync(email, nationalId);
-                string contactPartyNumber;
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
+                    client.DefaultRequestHeaders.Add("Accept", "application/json");
 
-                if (existingContact != null)
-                {
-                    // Si existe, usar el número de parte existente
-                    contactPartyNumber = existingContact.PartyNumber;
-                }
-                else
-                {
-                    // Crear nuevo contacto
-                    var newContact = new OracleContact
+                    var updateJson = JsonConvert.SerializeObject(new
                     {
-                        PersonFirstName = firstName,
-                        PersonLastName = lastName,
-                        PersonMiddleName = middleName ?? "",
-                        EmailAddress = email,
-                        PrimaryPhoneNumber = phone ?? "",
-                        NationalId = nationalId ?? "",
-                        NationalIdType = "CUI"
-                    };
+                        PrimaryContactPartyId = contactPartyId,
+                        AccountPartyId = accountPartyId
+                    }, JsonSettings);
+                    var content = new StringContent(updateJson, JsonEncoding, "application/json");
 
-                    var contactResponse = await CreateContactAsync(newContact);
-                    contactPartyNumber = contactResponse.PartyNumber;
-                }
-
-                // Buscar si existe la cuenta
-                var existingAccount = await SearchAccountAsync(email, nationalId);
-                string accountPartyNumber;
-
-                if (existingAccount != null)
-                {
-                    // Si existe, actualizar el contacto principal
-                    accountPartyNumber = existingAccount.PartyNumber;
-                    await SetPrimaryContactAsync(accountPartyNumber, contactPartyNumber);
-                }
-                else
-                {
-                    // Crear nueva cuenta
-                    var accountName = !string.IsNullOrEmpty(organizationName) 
-                        ? organizationName 
-                        : $"{firstName} {lastName}";
-
-                    var newAccount = new OracleAccount
+                    var updateUrl = $"{_baseUrl}/crmRestApi/resources/latest/serviceRequests/{srNumber}";
+                    var request = new HttpRequestMessage(new HttpMethod("PATCH"), updateUrl) { Content = content };
+                    var response = await client.SendAsync(request);
+                    if (!response.IsSuccessStatusCode)
                     {
-                        PartyName = accountName,
-                        OrganizationName = accountName,
-                        PrimaryContact = new OracleContactReference
-                        {
-                            PartyNumber = contactPartyNumber
-                        }
-                    };
-
-                    var accountResponse = await CreateAccountAsync(newAccount);
-                    accountPartyNumber = accountResponse.PartyNumber;
+                        var responseContent = await response.Content.ReadAsStringAsync();
+                        throw new Exception($"Fusion respondio {(int)response.StatusCode}: {responseContent}");
+                    }
                 }
-
-                return accountPartyNumber;
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error al crear/actualizar cuenta y contacto en Oracle Fusion: {ex.Message}", ex);
+                throw new Exception($"Error al actualizar el Service Request {srNumber} en Oracle Fusion: {ex.Message}", ex);
             }
+        }
+
+        /// <summary>
+        /// Tag que va en el asunto del correo. Fusion copia el asunto al Title del SR, asi que es
+        /// la unica forma de encontrar el SR que crea el correo entrante. El "]" final evita que
+        /// [DCS-12] coincida con [DCS-123].
+        /// </summary>
+        public static string SolicitudTag(int idSolicitud)
+        {
+            return $"[DCS-{idSolicitud}]";
+        }
+
+        /// <summary>
+        /// Devuelve el SrNumber mas reciente cuyo Title contiene el tag, o null si Fusion aun no
+        /// lo ha creado. Un error de Fusion se lanza en vez de tratarse como "no encontrado".
+        /// </summary>
+        public async Task<string> FindServiceRequestByTitleTagAsync(string tag)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
+                    client.DefaultRequestHeaders.Add("Accept", "application/json");
+
+                    var q = Uri.EscapeDataString($"Title LIKE '%{tag}%'");
+                    var searchUrl = $"{_baseUrl}/crmRestApi/resources/latest/serviceRequests?q={q}&fields=SrNumber&orderBy=CreationDate:desc&limit=1";
+                    var response = await client.GetAsync(searchUrl);
+                    var content = await response.Content.ReadAsStringAsync();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        throw new Exception($"Fusion respondio {(int)response.StatusCode}: {content}");
+                    }
+
+                    var items = JsonConvert.DeserializeObject<OracleServiceRequestSearchResponse>(content)?.Items;
+                    return items != null && items.Count > 0 ? items[0].SrNumber : null;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error al buscar Service Request {tag} en Oracle Fusion: {ex.Message}", ex);
+            }
+        }
+
+        private async Task<OracleSearchItem> EnsureContactAsync(string firstName, string lastName, string email, string nationalId)
+        {
+            var existing = await SearchContactAsync(email);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            var created = await CreateContactAsync(new OracleContact
+            {
+                PersonFirstName = firstName,
+                PersonLastName = lastName,
+                EmailAddress = email,
+                NationalId = nationalId ?? "",
+                NationalIdType = "CUI"
+            });
+            return new OracleSearchItem { PartyNumber = created.PartyNumber, PartyId = created.PartyId };
+        }
+
+        /// <summary>
+        /// Busca la cuenta cuyo contacto principal es el solicitante. Las cuentas que crea DCS no
+        /// guardan email ni CUI, asi que buscarlas por esos campos nunca las encontraba y se
+        /// creaba una cuenta duplicada en cada solicitud.
+        /// </summary>
+        private async Task<OracleSearchItem> SearchAccountByPrimaryContactAsync(string contactPartyNumber)
+        {
+            using (var client = new HttpClient())
+            {
+                client.DefaultRequestHeaders.Add("Authorization", GetBasicAuthHeader());
+                client.DefaultRequestHeaders.Add("Accept", "application/json");
+
+                var searchUrl = $"{_baseUrl}/crmRestApi/resources/latest/accounts?q=PrimaryContactPartyNumber='{Uri.EscapeDataString(contactPartyNumber)}'&fields=PartyNumber,PartyId&limit=1";
+                var response = await client.GetAsync(searchUrl);
+                var content = await response.Content.ReadAsStringAsync();
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new Exception($"Error al buscar cuenta por contacto principal en Oracle Fusion: Fusion respondio {(int)response.StatusCode}: {content}");
+                }
+
+                var searchResponse = JsonConvert.DeserializeObject<OracleSearchResponse>(content);
+                return searchResponse?.Items != null && searchResponse.Items.Count > 0 ? searchResponse.Items[0] : null;
+            }
+        }
+
+        private async Task<OracleSearchItem> EnsureAccountAsync(string firstName, string lastName, string email, string nationalId, string contactPartyNumber)
+        {
+            var existing = await SearchAccountByPrimaryContactAsync(contactPartyNumber)
+                ?? await SearchAccountAsync(email, nationalId);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            var created = await CreateAccountAsync(new OracleAccount
+            {
+                OrganizationName = $"{firstName} {lastName}",
+                PrimaryContactPartyNumber = contactPartyNumber
+            });
+            return new OracleSearchItem { PartyNumber = created.PartyNumber, PartyId = created.PartyId };
+        }
+
+        /// <summary>
+        /// Completa un SR ya creado (en prod, por el correo entrante) con lo que el correo no llena:
+        /// Contacto principal y Cuenta, creandolos en Fusion si no existen.
+        /// </summary>
+        public async Task UpdateServiceRequestForSolicitudAsync(
+            string srNumber,
+            string firstName,
+            string lastName,
+            string email,
+            string nationalId)
+        {
+            var contact = await EnsureContactAsync(firstName, lastName, email, nationalId);
+            var account = await EnsureAccountAsync(firstName, lastName, email, nationalId, contact.PartyNumber);
+            await UpdateServiceRequestPartiesAsync(srNumber, long.Parse(contact.PartyId), long.Parse(account.PartyId));
+        }
+
+        /// <summary>
+        /// Solo para el ambiente de pruebas, donde el correo entrante no crea SRs: crea el SR con los
+        /// mismos campos que llenaria el correo y luego aplica el mismo update que se usara en prod.
+        /// Devuelve el SrNumber creado.
+        /// </summary>
+        public async Task<string> CreateServiceRequestForSolicitudAsync(
+            string firstName,
+            string lastName,
+            string email,
+            string nationalId,
+            string title,
+            string description)
+        {
+            var srResponse = await CreateServiceRequestAsync(new OracleServiceRequest
+            {
+                Title = title,
+                ProblemDescription = description != null && description.Length > 1000
+                    ? description.Substring(0, 1000)
+                    : description
+            });
+
+            await UpdateServiceRequestForSolicitudAsync(srResponse.SrNumber, firstName, lastName, email, nationalId);
+
+            return srResponse.SrNumber;
         }
     }
 }

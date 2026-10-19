@@ -59,6 +59,12 @@
     <Reference Include="GemBox.Email, Version=15.0.0.1116, Culture=neutral, PublicKeyToken=b1b72c69714d4847, processorArchitecture=MSIL">
       <HintPath>..\packages\GemBox.Email.15.0.1116\lib\net35\GemBox.Email.dll</HintPath>
     </Reference>
+    <Reference Include="log4net, Version=2.0.15.0, Culture=neutral, PublicKeyToken=669e0ddf0bb1aa2a, processorArchitecture=MSIL">
+      <HintPath>packages\log4net.2.0.15\lib\net45\log4net.dll</HintPath>
+    </Reference>
+    <Reference Include="log4net.Ext.Json, Version=2.0.9.1, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>packages\log4net.Ext.Json.2.0.9.1\lib\net40\log4net.Ext.Json.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.IdentityModel.Logging, Version=5.2.1.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.IdentityModel.Logging.5.2.1\lib\net451\Microsoft.IdentityModel.Logging.dll</HintPath>
@@ -203,6 +209,7 @@
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
+    <Compile Include="Helpers\CatalogoDcs.cs" />
     <Compile Include="Helpers\DbContext.cs" />
     <Compile Include="Helpers\HMTLHelperExtensions.cs" />
     <Compile Include="Model1.Context.cs">
@@ -224,6 +231,8 @@
     <Compile Include="Models\MailEAModel.cs" />
     <Compile Include="Models\MailExt.cs" />
     <Compile Include="Models\ModelosListas.cs" />
+    <Compile Include="Models\OracleFusionModels.cs" />
+    <Compile Include="Services\OracleFusionService.cs" />
     <Compile Include="Parametro.cs">
       <DependentUpon>Model1.tt</DependentUpon>
     </Compile>
